@@ -1,11 +1,19 @@
 *.o
-.nobootstrap
-*~
-.common.git
-compile
 
 /configure
 /Makefile
 /config.cache
 /BUILD
 /INST
+
+# asfrent, added so 'git status' is always clean.
+.nobootstrap
+*~
+.common.git
+compile
+xapian-core/docs/geospatial.html
+xapian-core/languages/earlyenglish.cc
+xapian-core/languages/earlyenglish.h
+xapian-core/tests/api_snipper.h
+xapian-core/unicode/unicode-data.cc
+*.swp
