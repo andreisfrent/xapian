@@ -1,4 +1,8 @@
 *.o
+.nobootstrap
+*~
+.common.git
+compile
 
 /configure
 /Makefile
