@@ -65,6 +65,9 @@
 #include <xapian/termiterator.h>
 #include <xapian/valueiterator.h>
 
+// Clustering
+#include <xapian/clustering.h>
+
 // Indexing
 #include <xapian/termgenerator.h>
 
