@@ -178,47 +178,71 @@ class CosineSimilarity {
 //     // Builds a VectorSpace object for use in the clusterer.
 //     static VectorSpace *fromMSet(const Xapian::MSet& mset);
 // };
-//
-// // VISIBLE TO THE USER.
-// // A cluster is a set of documents. Objects will be constructed by the
-// // clustering algorithm and will be immutable for the user.
-// class XAPIAN_VISIBILITY_DEFAULT Cluster {
-//   friend class KMeansClusterer; // Although is should be any type of clusterer.
-//
-//   private:
-//     // Cluster ID.
-//     int _id;
-//
-//     // Contents of the cluster.
-//     std::set<docid> _contents;
-//
-//   public:
-//     const std::set<docid>& get_contents() const;
-//     bool contains(docid doc) const;
-//     size_t size() const;
-//     int id() const;
-// };
-//
-// // VISIBLE TO THE USER.
-// // A collection of clusters, the result of a clustering algorithm. Objects will
-// // be constructed by the clustering algorithm and will be immutable for the
-// // user.
-// class XAPIAN_VISIBILITY_DEFAULT Clusters {
-//   friend class KMeansClusterer; // Although is should be any type of clusterer.
-//
-//   private:
-//     // Maps documents to clusters.
-//     std::map<docid, Cluster> _object_to_cluster;
-//
-//     // Set of all clusters.
-//     std::set<Cluster> _clusters;
-//
-//   public:
-//     size_t count() const;
-//     const Cluster& get(docid object) const;
-//     const std::set<Cluster>& get_all() const;
-// };
-//
+
+// VISIBLE TO THE USER.
+// A cluster is a set of documents. Objects will be constructed by the
+// clustering algorithm and will be immutable for the user.
+class XAPIAN_VISIBILITY_DEFAULT Cluster {
+  // friend class KMeansClusterer; // Although is should be any type of clusterer.
+
+  private:
+    // Cluster ID.
+    int _id;
+
+    // Contents of the cluster.
+    std::set<docid> _contents;
+
+  public:
+    const std::set<docid>& get_contents() const {
+      return _contents;
+    }
+
+    bool contains(docid doc) const {
+      return _contents.find(doc) != _contents.end();
+    }
+
+    size_t size() const {
+      return _contents.size();
+    }
+
+    int id() const {
+      return _id;
+    }
+};
+
+// VISIBLE TO THE USER.
+// A collection of clusters, the result of a clustering algorithm. Objects will
+// be constructed by the clustering algorithm and will be immutable for the
+// user.
+class XAPIAN_VISIBILITY_DEFAULT Clusters {
+  // friend class KMeansClusterer; // Although is should be any type of clusterer.
+
+  private:
+    // Maps documents to clusters.
+    std::map<docid, Cluster> _doc_to_cluster;
+
+    // Set of all clusters.
+    std::set<Cluster> _clusters;
+
+  public:
+    size_t count() const {
+      return _clusters.size();
+    }
+
+    const Cluster& get(docid doc) const {
+      std::map<docid, Cluster>::const_iterator it =
+          _doc_to_cluster.find(doc);
+      if (it == _doc_to_cluster.end()) {
+        // FIXME error.
+      }
+      return it->second;
+    }
+
+    const std::set<Cluster>& get_all() const {
+      return _clusters;
+    }
+};
+
 // // VISIBLE TO THE USER.
 // template<typename FeatureVectorBuilder, typename SimilarityMetric>
 // class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
