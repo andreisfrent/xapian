@@ -188,12 +188,12 @@ class TfidfBuilder {
 
           // Multiply them together and store the result.
           double tfidf = current_tf * current_idf;
-          fv->insert(make_pair(term, tfidf));
+          fv->insert(std::make_pair(term, tfidf));
         }
 
         // Add the feature vector to the collection, keyed by its corresponding
         // docid.
-        feature_vectors->insert(make_pair(*it, fv));
+        feature_vectors->insert(std::make_pair(*it, fv));
       }
     }
 
@@ -206,45 +206,93 @@ class TfidfBuilder {
     }
 };
 
-// // INTERNAL USE ONLY
-// // This class keeps track of the feature vectors and is the main link between
-// // the clustering algorithm and mathematics. It is the only one that should be
-// // aware of the way feature vectors are built and the similarity metric. This
-// // could be changed in the future for performance reasons.
-// // Coordinates are transformed from theier original type to int for faster
-// // access. The clustering algorithm will work on integer indexes.
-// template<typename FeatureVectorsBuilder, typename SimilarityMetric>
-// class VectorSpace {
-//   private:
-//     // Maps the new coordinates back into the old ones so we can access the
-//     // actual terms at a later point if we need.
-//     std::map<int, std::string> _coordinate_mapping;
-//
-//     // Maps the index of a datapoint in the vector space to its original index
-//     // (docid). The information is needed in order to present the clusters to
-//     // the user in terms of docids.
-//     std::map<int, docid> _datapoint_to_object;
-//
-//     // Similarity metric used in this vector space.
-//     SimilarityMetric _similarity;
-//
-//   public:
-//     // Data points (each document will have a different index in this vector).
-//     std::vector<FeatureVector<int>*> data;
-//
-//     // Computes similarity between two indexes in the datapoints.
-//     double similarity(int index1, int index2);
-//
-//     // Computes similarity between two given feature vectors.
-//     double similarity(const FeatureVector<int>* fv1, const FeatureVector<int>* fv2);
-//
-//     // Computes similarity between a given feature vector and the feature vector
-//     // at index in the datapoints.
-//     double similarity(const FeatureVector<int>* fv, int index);
-//
-//     // Builds a VectorSpace object for use in the clusterer.
-//     static VectorSpace *fromMSet(const Xapian::MSet& mset);
-// };
+// INTERNAL USE ONLY
+// This class keeps track of the feature vectors and is the main link between
+// the clustering algorithm and mathematics. It is the only one that should be
+// aware of the way feature vectors are built and the similarity metric. This
+// could be changed in the future for performance reasons.
+// Coordinates are transformed from theier original type to int for faster
+// access. The clustering algorithm will work on integer indexes.
+template<typename FeatureVectorsBuilder, typename SimilarityMetric>
+class VectorSpace {
+  private:
+    // Maps the new coordinates back into the old ones so we can access the
+    // actual terms at a later point if we need.
+    std::map<int, std::string> _coordinate_mapping;
+
+    // Maps the index of a datapoint in the vector space to its original index
+    // (docid). The information is needed in order to present the clusters to
+    // the user in terms of docids.
+    std::map<int, docid> _datapoint_to_object;
+
+    // Similarity metric used in this vector space.
+    SimilarityMetric _similarity_metric;
+
+  public:
+    // Data points (each document will have a different index in this vector).
+    std::vector<FeatureVector<int>*> data;
+
+    // Computes similarity between two indexes in the datapoints.
+    double similarity(int index1, int index2) {
+      // TODO add assertions for indexes.
+      return similarity(data[index1], data[index2]);
+    }
+
+    // Computes similarity between two given feature vectors.
+    double similarity(const FeatureVector<int>* fv1, const FeatureVector<int>* fv2) {
+      return _similarity_metric.similarity(fv1, fv2);
+    }
+
+    // Computes similarity between a given feature vector and the feature vector
+    // at index in the datapoints.
+    double similarity(const FeatureVector<int>* fv, int index) {
+      return similarity(fv, data[index]);
+    }
+
+    // Builds a VectorSpace object for use in the clusterer.
+    static VectorSpace *fromMSet(const Xapian::MSet& mset) {
+      // Use the feature vector builder to get string indexed feature vectors.
+      FeatureVectorsBuilder feature_vector_builder;
+      std::map<docid, FeatureVector<std::string>*> original_vectors;
+      feature_vector_builder.compute_feature_vectors(mset, &original_vectors);
+
+      // Allocate new vector space.
+      VectorSpace *vector_space = new VectorSpace;
+
+      // Iterate through original vectors, fill info in vector space and free them.
+      std::map<std::string, int> term_to_index;
+      std::map<docid, FeatureVector<std::string>*>::const_iterator it;
+      for (it = original_vectors.begin(); it != original_vectors.end(); ++it) {
+        docid current_doc = it->first;
+        const FeatureVector<std::string>& original_fv = *(it->second);
+        FeatureVector<int> *reindexed_fv = new FeatureVector<int>;
+        FeatureVector<std::string>::const_iterator fvit;
+        for (fvit = original_fv.begin(); fvit != original_fv.end(); ++fvit) {
+          if(term_to_index.find(fvit->first) == term_to_index.end()) {
+            term_to_index[fvit->first] = static_cast<int>(term_to_index.size());
+          }
+          int new_term_index = term_to_index[fvit->first];
+          reindexed_fv->insert(std::make_pair(new_term_index, fvit->second));
+        }
+        delete it->second;
+
+        // Update vector space.
+        int reindexed_fv_index = static_cast<int>(vector_space->data.size());
+        vector_space->_datapoint_to_object[reindexed_fv_index] = current_doc;
+        vector_space->data.push_back(reindexed_fv);
+      }
+
+      // Update mapping from original terms to new indexes.
+      std::map<std::string, int>::const_iterator mapping_it;
+      for (mapping_it = term_to_index.begin();
+          mapping_it != term_to_index.end(); ++mapping_it) {
+        vector_space->_coordinate_mapping[mapping_it->second] =
+            mapping_it->first;
+      }
+
+      return vector_space;
+    }
+};
 
 // VISIBLE TO THE USER.
 // A cluster is a set of documents. Objects will be constructed by the
