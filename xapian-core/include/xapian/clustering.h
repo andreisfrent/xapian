@@ -282,6 +282,11 @@ class VectorSpace {
       return similarity(fv, data[index]);
     }
 
+    // Returns the docid associated with datapoint at index.
+    docid get_docid_by_index(int index) {
+      return _datapoint_to_object[index];
+    }
+
     // Builds a VectorSpace object for use in the clusterer.
     static VectorSpace *from_mset(const Xapian::MSet& mset) {
       // Use the feature vector builder to get string indexed feature vectors.
@@ -375,10 +380,10 @@ class XAPIAN_VISIBILITY_DEFAULT Clusters {
 
   private:
     // Maps documents to clusters.
-    std::map<docid, Cluster> _doc_to_cluster;
+    std::map<docid, int> _doc_to_cluster_id;
 
     // Set of all clusters.
-    std::set<Cluster> _clusters;
+    std::vector<Cluster> _clusters;
 
   public:
     size_t count() const {
@@ -386,15 +391,14 @@ class XAPIAN_VISIBILITY_DEFAULT Clusters {
     }
 
     const Cluster& get(docid doc) const {
-      std::map<docid, Cluster>::const_iterator it =
-          _doc_to_cluster.find(doc);
-      if (it == _doc_to_cluster.end()) {
+      std::map<docid, int>::const_iterator it = _doc_to_cluster_id.find(doc);
+      if (it == _doc_to_cluster_id.end()) {
         // FIXME error.
       }
-      return it->second;
+      return _clusters[it->second];
     }
 
-    const std::set<Cluster>& get_all() const {
+    const std::vector<Cluster>& get_all() const {
       return _clusters;
     }
 };
@@ -487,8 +491,27 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
       update_centroids();
     }
 
+    void clear_results() {
+      _results._clusters.clear();
+      _results._doc_to_cluster_id.clear();
+    }
+
     void store_results() {
-      // TODO implement.
+      clear_results();
+
+      for (size_t cindex = 0; cindex < _centroids.size(); ++cindex) {
+        Cluster resulting_cluster;
+        resulting_cluster._id = cindex;
+        const std::vector<int>& assignments = _centroid_assignments[cindex];
+        for (size_t aindex = 0; aindex < assignments.size(); ++aindex) {
+          int dindex = assignments[aindex];
+          docid doc = _vector_space->get_docid_by_index(dindex);
+          resulting_cluster._contents.insert(doc);
+          _results._doc_to_cluster_id[doc] = cindex;
+        }
+
+        _results._clusters.push_back(resulting_cluster);
+      }
     }
 
     void run_iterations(int iteration_count) {
@@ -531,13 +554,6 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
       return _results;
     }
 };
-
-void f(const Xapian::MSet& mset);
-void f(const Xapian::MSet& mset) {
-  KMeansClusterer<TfidfBuilder, CosineSimilarity> clusterer;
-  clusterer.cluster(mset, 5);
-  Clusters result = clusterer.get_results();
-}
 }
 
 #endif  // XAPIAN_INCLUDED_CLUSTERING_H
