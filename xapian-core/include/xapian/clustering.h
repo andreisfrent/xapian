@@ -402,8 +402,17 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
       }
     }
 
-    void run_one_iteration() {
+    void assign_datapoints_to_centroids() {
       // TODO implement.
+    }
+
+    void update_centroids() {
+      // TODO implement.
+    }
+
+    void run_one_iteration() {
+      assign_datapoints_to_centroids();
+      update_centroids();
     }
 
     void store_results() {
