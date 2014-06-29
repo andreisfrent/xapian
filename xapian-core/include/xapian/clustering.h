@@ -23,6 +23,7 @@
 
 #include <xapian/enquire.h>
 #include <xapian/visibility.h>
+#include <xapian/document.h>
 
 #include <map>
 #include <set>
@@ -110,35 +111,101 @@ class CosineSimilarity {
     }
 };
 
-// // INTERNAL USE ONLY.
-// // Builds the initial feature vectors from a collection of documents.
-// class FeatureVectorsBuilder {
-//   public:
-//     // Some feature vectors can't be constructed until all documents have been
-//     // analyzed. This method should be called in order for the builder to
-//     // analyze the documents. The method should always be called by the vector
-//     // space factory methods.
-//     virtual void analyze_documents(const Xapian::MSet& mset) = 0;
-//
-//     // This method uses the information gathered in present documents in order
-//     // to actually build the feature vectors. The caller should take care of the
-//     // allocated memory.
-//     virtual std::map<docid, FeatureVector<std::string>*> compute_feature_vectors() = 0;
-// };
-//
-// // INTERNAL USE ONLY. Only the type should be visible to the user so it
-// // can specify it to the clusterer.
-// // Implementation of FeatureVectorBuilder that computes tf-idf for each word in
-// // the documents.
-// class TfidfBuilder : public FeatureVectorsBuilder {
-//   public:
-//     // This function will analyze the contents and compute needed statistics.
-//     void analyze_documents(const Xapian::MSet& mset);
-//
-//     // Computes the final vectors from the statistics gathered by present_documents.
-//     void sed::map<docid, FeatureVector<std::string>*> compute_feature_vectors();
-// };
-//
+// INTERNAL USE ONLY. Only the type should be visible to the user so it
+// can specify it to the clusterer.
+// Implementation of FeatureVectorBuilder that computes tf-idf for each word in
+// the documents.
+class TfidfBuilder {
+  private:
+    double doc_count;
+    std::map<std::string, int> _idf_counts;
+    std::map<docid, std::map<std::string, int> > _tf_counts;
+    std::vector<docid> _docs;
+
+    void update_tf_statistics(docid doc, const std::string& term) {
+      // We use the boolean frequencies tf.
+      _tf_counts[doc][term] = 1;
+    }
+
+    void update_idf_statistics(const std::string& term) {
+      ++_idf_counts[term];
+    }
+
+    void gather_statistics(const Xapian::MSet& mset) {
+      // Store the number of documents (double for performance).
+      doc_count = static_cast<double>(mset.size());
+
+      // For every document in the MSet.
+      for (MSetIterator mset_it = mset.begin();
+          mset_it != mset.end(); ++mset_it) {
+        Document current_doc = mset_it.get_document();
+        docid current_docid = current_doc.get_docid();
+
+        // Store the docid.
+        _docs.push_back(current_docid);
+
+        // For every term in the current document.
+        for (TermIterator term_it = current_doc.termlist_begin();
+            term_it != current_doc.termlist_end(); ++term_it) {
+          const std::string& current_term = *term_it;
+          // Update needed statistics.
+          update_tf_statistics(current_docid, current_term);
+          update_idf_statistics(current_term);
+        }
+      }
+    }
+
+    void update_feature_vectors(
+        std::map<docid, FeatureVector<std::string>*>* feature_vectors) {
+      feature_vectors->clear();
+
+      // First, we compute the idf value for each term.
+      std::map<std::string, double> idf;
+      for (std::map<std::string, int>::const_iterator it = _idf_counts.begin();
+          it != _idf_counts.end(); ++it) {
+        const std::string& term = it->first;
+        double term_occurrences = static_cast<double>(it->second);
+        idf[term] = log(doc_count / term_occurrences);
+      }
+
+      // We now compute feature vectors by multiplying tf and idf.
+      for (std::vector<docid>::const_iterator it = _docs.begin();
+          it != _docs.end(); ++it) {
+        // Allocate new feature vector.
+        FeatureVector<std::string> *fv = new FeatureVector<std::string>();
+
+        const std::map<std::string, int>& tf_for_current_doc = _tf_counts[*it];
+
+        // Add all the terms and their tfidf to the feature vector.
+        std::map<std::string, int>::const_iterator term_it;
+        for (term_it = tf_for_current_doc.begin();
+            term_it != tf_for_current_doc.end(); ++term_it) {
+          const std::string& term = term_it->first;
+
+          // Get current tf and idf.
+          double current_tf = static_cast<double>(term_it->second);
+          double current_idf = idf[term];
+
+          // Multiply them together and store the result.
+          double tfidf = current_tf * current_idf;
+          fv->insert(make_pair(term, tfidf));
+        }
+
+        // Add the feature vector to the collection, keyed by its corresponding
+        // docid.
+        feature_vectors->insert(make_pair(*it, fv));
+      }
+    }
+
+  public:
+    void compute_feature_vectors(
+        const Xapian::MSet& mset,
+        std::map<docid, FeatureVector<std::string>*>* feature_vectors) {
+      gather_statistics(mset);
+      update_feature_vectors(feature_vectors);
+    }
+};
+
 // // INTERNAL USE ONLY
 // // This class keeps track of the feature vectors and is the main link between
 // // the clustering algorithm and mathematics. It is the only one that should be
