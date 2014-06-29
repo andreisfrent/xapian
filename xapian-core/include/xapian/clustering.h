@@ -113,7 +113,7 @@ class CosineSimilarity {
 
 // INTERNAL USE ONLY. Only the type should be visible to the user so it
 // can specify it to the clusterer.
-// Implementation of FeatureVectorBuilder that computes tf-idf for each word in
+// Implementation of FeatureVectorsBuilder that computes tf-idf for each word in
 // the documents.
 class TfidfBuilder {
   private:
@@ -232,6 +232,14 @@ class VectorSpace {
     // Data points (each document will have a different index in this vector).
     std::vector<FeatureVector<int>*> data;
 
+    ~VectorSpace() {
+      std::vector<FeatureVector<int>*>::const_iterator it;
+      for (it = data.begin(); it != data.end(); ++it) {
+        FeatureVector<int> *fv = *it;
+        delete fv;
+      }
+    }
+
     // Computes similarity between two indexes in the datapoints.
     double similarity(int index1, int index2) {
       // TODO add assertions for indexes.
@@ -250,7 +258,7 @@ class VectorSpace {
     }
 
     // Builds a VectorSpace object for use in the clusterer.
-    static VectorSpace *fromMSet(const Xapian::MSet& mset) {
+    static VectorSpace *from_mset(const Xapian::MSet& mset) {
       // Use the feature vector builder to get string indexed feature vectors.
       FeatureVectorsBuilder feature_vector_builder;
       std::map<docid, FeatureVector<std::string>*> original_vectors;
@@ -294,11 +302,17 @@ class VectorSpace {
     }
 };
 
+// Forward declaration of a clusterer class.
+template<typename FeatureVectorsBuilder, typename SimilarityMetric>
+class KMeansClusterer;
+
 // VISIBLE TO THE USER.
 // A cluster is a set of documents. Objects will be constructed by the
 // clustering algorithm and will be immutable for the user.
 class XAPIAN_VISIBILITY_DEFAULT Cluster {
-  // friend class KMeansClusterer; // Although is should be any type of clusterer.
+  // FIXME: should be any type of clusterer.
+  template<typename FeatureVectorsBuilder, typename SimilarityMetric>
+  friend class KMeansClusterer;
 
   private:
     // Cluster ID.
@@ -330,7 +344,9 @@ class XAPIAN_VISIBILITY_DEFAULT Cluster {
 // be constructed by the clustering algorithm and will be immutable for the
 // user.
 class XAPIAN_VISIBILITY_DEFAULT Clusters {
-  // friend class KMeansClusterer; // Although is should be any type of clusterer.
+  // FIXME: should be any type of clusterer.
+  template<typename FeatureVectorsBuilder, typename SimilarityMetric>
+  friend class KMeansClusterer;
 
   private:
     // Maps documents to clusters.
@@ -358,20 +374,67 @@ class XAPIAN_VISIBILITY_DEFAULT Clusters {
     }
 };
 
-// // VISIBLE TO THE USER.
-// template<typename FeatureVectorBuilder, typename SimilarityMetric>
-// class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
-//   private:
-//     // Vector space for use in the clusterer.
-//     VectorSpace<FeatureVectorsBuilder, SimilarityMetric> *_vector_space;
-//
-//   public:
-//     // Method that actually clusters the data.
-//     void cluster(const Xapian::MSet& mset, int cluster_count);
-//
-//     // Returns the results of the clustering.
-//     const Clusters& get_results();
-// };
+// VISIBLE TO THE USER.
+template<typename FeatureVectorsBuilder, typename SimilarityMetric>
+class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
+  private:
+    // Vector space for use in the clusterer.
+    VectorSpace<FeatureVectorsBuilder, SimilarityMetric> *_vector_space;
+
+    // Results of the clustering algorithm.
+    Clusters _results;
+
+    // Cluster count.
+    int _cluster_count;
+
+    void generate_initial_centroids(int cluster_count) {
+      _cluster_count = cluster_count;
+
+      // TODO implement.
+    }
+
+    void run_one_iteration() {
+      // TODO implement.
+    }
+
+    void store_results() {
+      // TODO implement.
+    }
+
+    void run_iterations(int iteration_count) {
+      for (int i = 0; i < iteration_count; ++i) {
+        run_one_iteration();
+      }
+    }
+
+  public:
+    // Method that actually clusters the data.
+    void cluster(const Xapian::MSet& mset,
+        int cluster_count, int iteration_count = 1000) {
+      // Build the vector space.
+      _vector_space =
+          VectorSpace<FeatureVectorsBuilder, SimilarityMetric>::from_mset(mset);
+
+      generate_initial_centroids(cluster_count);
+      run_iterations(iteration_count);
+      store_results();
+
+      // Deallocate vector space, we don't need it anymore.
+      delete _vector_space;
+    }
+
+    // Returns the results of the clustering.
+    const Clusters& get_results() const {
+      return _results;
+    }
+};
+
+void f(const Xapian::MSet& mset);
+void f(const Xapian::MSet& mset) {
+  KMeansClusterer<TfidfBuilder, CosineSimilarity> clusterer;
+  clusterer.cluster(mset, 5);
+  Clusters result = clusterer.get_results();
+}
 }
 
 #endif  // XAPIAN_INCLUDED_CLUSTERING_H
