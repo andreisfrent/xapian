@@ -25,6 +25,7 @@
 #include <xapian/visibility.h>
 #include <xapian/document.h>
 
+#include <limits>
 #include <map>
 #include <set>
 #include <vector>
@@ -37,20 +38,20 @@ namespace Xapian {
 template<typename T>
 class FeatureVector : public std::map<T, double> {
   private:
-    double _norm;
-    bool _cached;
+    mutable double _norm;
+    mutable bool _cached;
 
-    void compute_norm() {
-      _norm = 0.0;
+    double compute_norm() const {
+      double local_norm = 0.0;
       for (typename std::map<T, double>::const_iterator it = this->begin();
           it != this->end(); ++it) {
         const double& value = it->second;
-        _norm += value * value;
+        local_norm += value * value;
       }
-      if (_norm != 0.0) {
-        _norm = sqrt(_norm);
+      if (local_norm != 0.0) {
+        local_norm = sqrt(_norm);
       }
-      _cached = true;
+      return local_norm;
     }
 
   public:
@@ -58,14 +59,15 @@ class FeatureVector : public std::map<T, double> {
       mark_dirty();
     }
 
-    double norm() {
+    double norm() const {
       if (!_cached) {
-        compute_norm();
+        _norm = compute_norm();
+        _cached = true;
       }
       return _norm;
     }
 
-    bool is_zero() {
+    bool is_zero() const {
       return norm() == 0.0;
     }
 
@@ -384,6 +386,9 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
     // Centroids for kmeans algorithm.
     std::vector<FeatureVector<int>*> _centroids;
 
+    // Datapoint to centroid mapping.
+    std::map<int, int> _datapoint_to_centroid;
+
     // Results of the clustering algorithm.
     Clusters _results;
 
@@ -403,7 +408,20 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
     }
 
     void assign_datapoints_to_centroids() {
-      // TODO implement.
+      // For each datapoint.
+      for (size_t dindex = 0; dindex < _vector_space->data.size(); ++dindex) {
+        double assigned_distance = std::numeric_limits<double>::max();
+        size_t assigned_cluster = 0;
+        for (size_t cindex = 0; cindex < _centroids.size(); ++cindex) {
+          double current_distance =
+              _vector_space->similarity(_centroids[cindex], dindex);
+          if (current_distance < assigned_distance) {
+            assigned_distance = current_distance;
+            assigned_cluster = cindex;
+          }
+        }
+        _datapoint_to_centroid[dindex] = assigned_cluster;
+      }
     }
 
     void update_centroids() {
