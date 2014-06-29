@@ -30,6 +30,7 @@
 #include <set>
 #include <vector>
 #include <cmath>
+#include <cstdlib>
 
 namespace Xapian {
 
@@ -73,6 +74,28 @@ class FeatureVector : public std::map<T, double> {
 
     void mark_dirty() {
       _cached = false;
+    }
+
+    void clear_vector() {
+      // Call the underlying clear and mark it as dirty.
+      this->clear();
+      mark_dirty();
+    }
+
+    void add_vector(const FeatureVector<T> *other) {
+      typename std::map<T, double>::const_iterator it_other;
+      for (it_other = other->begin(); it_other != other->end(); ++it_other) {
+        (*this)[it_other->first] += it_other->second;
+      }
+      mark_dirty();
+    }
+
+    void multiply_by_scalar(double scalar) {
+      typename std::map<T, double>::iterator it;
+      for (it = this->begin(); it != this->end(); ++it) {
+        it->second *= scalar;
+      }
+      mark_dirty();
     }
 };
 
@@ -387,7 +410,7 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
     std::vector<FeatureVector<int>*> _centroids;
 
     // Datapoint to centroid mapping.
-    std::map<int, int> _datapoint_to_centroid;
+    std::vector<std::vector<int> > _centroid_assignments;
 
     // Results of the clustering algorithm.
     Clusters _results;
@@ -407,28 +430,59 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
       }
     }
 
+    void clear_centroid_assignments() {
+      _centroid_assignments.clear();
+      _centroid_assignments.resize(_centroids.size());
+    }
+
     void assign_datapoints_to_centroids() {
       // For each datapoint.
       for (size_t dindex = 0; dindex < _vector_space->data.size(); ++dindex) {
         double assigned_distance = std::numeric_limits<double>::max();
-        size_t assigned_cluster = 0;
+        size_t assigned_centroid = 0;
+
+        // For each cluster.
         for (size_t cindex = 0; cindex < _centroids.size(); ++cindex) {
           double current_distance =
               _vector_space->similarity(_centroids[cindex], dindex);
+
+          // If current centroid is closer to the datapoint.
           if (current_distance < assigned_distance) {
             assigned_distance = current_distance;
-            assigned_cluster = cindex;
+            assigned_centroid = cindex;
           }
         }
-        _datapoint_to_centroid[dindex] = assigned_cluster;
+
+        // Assign datapoint to cluster.
+        _centroid_assignments[assigned_centroid].push_back(dindex);
       }
     }
 
+    void randomly_restart_centroid(int index) {
+      int random_datapoint_index = rand() % _vector_space->data.size();
+      *(_centroids[index]) = *(_vector_space->data[random_datapoint_index]);
+    }
+
     void update_centroids() {
-      // TODO implement.
+      for (size_t cindex = 0; cindex < _centroids.size(); ++cindex) {
+        const std::vector<int>& assignments = _centroid_assignments[cindex];
+        if (assignments.empty()) {
+          randomly_restart_centroid(cindex);
+        } else {
+          FeatureVector<int> *centroid = _centroids[cindex];
+          centroid->clear_vector();
+          for (size_t aindex = 0; aindex < assignments.size(); ++aindex) {
+            int dindex = assignments[aindex];
+            const FeatureVector<int> *datapoint = _vector_space->data[dindex];
+            centroid->add_vector(datapoint);
+          }
+          centroid->multiply_by_scalar(1.0 / assignments.size());
+        }
+      }
     }
 
     void run_one_iteration() {
+      clear_centroid_assignments();
       assign_datapoints_to_centroids();
       update_centroids();
     }
