@@ -381,6 +381,9 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
     // Vector space for use in the clusterer.
     VectorSpace<FeatureVectorsBuilder, SimilarityMetric> *_vector_space;
 
+    // Centroids for kmeans algorithm.
+    std::vector<FeatureVector<int>*> _centroids;
+
     // Results of the clustering algorithm.
     Clusters _results;
 
@@ -390,7 +393,13 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
     void generate_initial_centroids(int cluster_count) {
       _cluster_count = cluster_count;
 
-      // TODO implement.
+      // Get first feature vectors from the vector space.
+      std::vector<FeatureVector<int>*>::const_iterator it;
+      for (it = _vector_space->data.begin();
+          it != _vector_space->data.end(); ++it) {
+        const FeatureVector<int> *fv = *it;
+        _centroids.push_back(new FeatureVector<int>(*fv));
+      }
     }
 
     void run_one_iteration() {
@@ -407,20 +416,33 @@ class XAPIAN_VISIBILITY_DEFAULT KMeansClusterer {
       }
     }
 
+    void free_resources() {
+      // Free vector space.
+      delete _vector_space;
+
+      // Free centroids.
+      std::vector<FeatureVector<int>*>::const_iterator centroid_it;
+      for (centroid_it = _centroids.begin();
+          centroid_it != _centroids.end(); ++centroid_it) {
+        const FeatureVector<int> *fv = *centroid_it;
+        delete fv;
+      }
+    }
+
+    void build_vector_space(const Xapian::MSet& mset) {
+      _vector_space =
+          VectorSpace<FeatureVectorsBuilder, SimilarityMetric>::from_mset(mset);
+    }
+
   public:
     // Method that actually clusters the data.
     void cluster(const Xapian::MSet& mset,
         int cluster_count, int iteration_count = 1000) {
-      // Build the vector space.
-      _vector_space =
-          VectorSpace<FeatureVectorsBuilder, SimilarityMetric>::from_mset(mset);
-
+      build_vector_space(mset);
       generate_initial_centroids(cluster_count);
       run_iterations(iteration_count);
       store_results();
-
-      // Deallocate vector space, we don't need it anymore.
-      delete _vector_space;
+      free_resources();
     }
 
     // Returns the results of the clustering.
